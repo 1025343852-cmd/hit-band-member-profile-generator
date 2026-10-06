@@ -1,6 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import "./style.css";
 
 const asset = (name) => `${import.meta.env.BASE_URL}assets/${name}`;
@@ -45,10 +45,6 @@ document.querySelector("#app").innerHTML = `
         <div class="photo-preview" id="photo-preview" hidden><img alt="证件照预览" /><button type="button" id="remove-photo">移除照片</button></div>
       </section>
 
-      ${recordSection("awards", "02", "获奖记录", "时间", "奖励名称", "最多显示 6 条，按时间顺序填写。")}
-      ${attendanceSection()}
-      ${recordSection("performances", "04", "演出登记", "时间", "地点", "演出主题", "曲目名称（专场无需填写）", "最多显示 9 条。")}
-
       <section class="actions">
         <div><h2>导出档案</h2><p>确认信息后分别下载 PDF 或 Excel。</p></div>
         <div class="buttons"><button type="button" class="secondary" id="download-xlsx">下载 Excel</button><button type="button" class="primary" id="download-pdf">下载 PDF</button></div>
@@ -57,43 +53,6 @@ document.querySelector("#app").innerHTML = `
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
 `;
-
-function recordSection(id, no, title, ...columns) {
-  const help = columns.pop();
-  const headings = columns;
-  return `<section class="card records" data-records="${id}" data-limit="${id === "awards" ? 6 : 9}">
-    <div class="section-title"><span>${no}</span><div><h2>${title}</h2><p>${help}</p></div></div>
-    <div class="record-head" style="--columns:${headings.length}">${headings.map((name) => `<span>${name}</span>`).join("")}<span>操作</span></div>
-    <div class="record-list"></div><button type="button" class="add-record">添加一条</button>
-  </section>`;
-}
-
-function attendanceSection() {
-  return `<section class="card records" data-records="attendance" data-limit="6">
-    <div class="section-title"><span>03</span><div><h2>团员排练考勤</h2><p>最多显示 6 条。考勤标记与原表保持一致。</p></div></div>
-    <div class="record-head" style="--columns:3"><span>学期</span><span>考勤标记</span><span>声部长签字</span><span>操作</span></div>
-    <div class="record-list"></div><button type="button" class="add-record">添加一条</button>
-  </section>`;
-}
-
-function addRecord(section) {
-  const id = section.dataset.records;
-  const list = section.querySelector(".record-list");
-  if (list.children.length >= Number(section.dataset.limit)) return setStatus(`该部分最多填写 ${section.dataset.limit} 条记录。`, true);
-  const row = document.createElement("div");
-  row.className = "record-row";
-  if (id === "awards") row.innerHTML = `<input type="date" aria-label="获奖时间"><input aria-label="奖励名称"><button type="button" class="remove-record">删除</button>`;
-  if (id === "attendance") row.innerHTML = `<input aria-label="学期" placeholder="如：2026 春季"><select aria-label="考勤标记"><option value="">请选择</option><option>90%优</option><option>80%良</option><option>60%及格</option></select><input aria-label="声部长签字"><button type="button" class="remove-record">删除</button>`;
-  if (id === "performances") row.innerHTML = `<input type="date" aria-label="演出时间"><input aria-label="地点"><input aria-label="演出主题"><input aria-label="曲目名称"><button type="button" class="remove-record">删除</button>`;
-  list.append(row);
-}
-
-document.querySelectorAll("[data-records]").forEach((section) => addRecord(section));
-document.addEventListener("click", (event) => {
-  const section = event.target.closest("[data-records]");
-  if (event.target.matches(".add-record")) addRecord(section);
-  if (event.target.matches(".remove-record")) event.target.closest(".record-row").remove();
-});
 
 document.querySelector("#photo").addEventListener("change", (event) => {
   const file = event.target.files?.[0];
@@ -116,18 +75,11 @@ document.querySelector("#remove-photo").addEventListener("click", () => {
 
 function getValue(id) { return document.querySelector(`#${id}`).value.trim(); }
 function dateText(value) { return value ? value.replaceAll("-", ".") : ""; }
-function collectRows(id) {
-  return [...document.querySelector(`[data-records="${id}"] .record-list`).children]
-    .map((row) => [...row.querySelectorAll("input,select")].map((input) => input.value.trim()))
-    .filter((values) => values.some(Boolean));
-}
 function data() {
   return {
     number: getValue("number"), name: getValue("name"), studentId: getValue("studentId"), part: getValue("part"),
     joinDate: dateText(getValue("joinDate")), foundation: getValue("foundation"), teacher: getValue("teacher"),
-    phone: getValue("phone"), hometown: getValue("hometown"), qq: getValue("qq"), wechat: getValue("wechat"),
-    awards: collectRows("awards").map(([date, name]) => [dateText(date), name]), attendance: collectRows("attendance"),
-    performances: collectRows("performances").map(([date, place, theme, song]) => [dateText(date), place, theme, song])
+    phone: getValue("phone"), hometown: getValue("hometown"), qq: getValue("qq"), wechat: getValue("wechat")
   };
 }
 function valid() {
@@ -140,21 +92,41 @@ function setStatus(message, error = false) {
 }
 function filename(d, extension) { return `军乐团团员档案_${d.name || "未命名"}_${d.studentId || "档案"}.${extension}`; }
 
-function worksheet(rows, widths) {
-  const sheet = XLSX.utils.aoa_to_sheet(rows);
-  sheet["!cols"] = widths.map((width) => ({ wch: width }));
-  return sheet;
-}
-document.querySelector("#download-xlsx").addEventListener("click", () => {
+function imageExtension(dataUrl) { return dataUrl.startsWith("data:image/png") ? "png" : "jpeg"; }
+document.querySelector("#download-xlsx").addEventListener("click", async () => {
   if (!valid()) return;
-  const d = data();
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, worksheet([["哈尔滨工业大学军乐团团员档案"], [], ["编号", d.number], ["姓名", d.name], ["学号", d.studentId], ["声部", d.part], ["入团时间", d.joinDate], ["是否零基础", d.foundation], ["老师", d.teacher], ["电话", d.phone], ["家乡", d.hometown], ["QQ", d.qq], ["微信", d.wechat]], [18, 32]), "基本档案");
-  XLSX.utils.book_append_sheet(book, worksheet([["序号", "时间", "奖励名称"], ...d.awards.map((row, index) => [index + 1, ...row])], [10, 18, 48]), "获奖记录");
-  XLSX.utils.book_append_sheet(book, worksheet([["学期", "考勤标记", "声部长签字"], ...d.attendance], [20, 20, 28]), "排练考勤");
-  XLSX.utils.book_append_sheet(book, worksheet([["时间", "地点", "演出主题", "曲目名称（专场无需填写）"], ...d.performances], [18, 24, 36, 42]), "演出登记");
-  XLSX.writeFile(book, filename(d, "xlsx"));
-  setStatus("Excel 已开始下载。");
+  const button = document.querySelector("#download-xlsx");
+  button.disabled = true; setStatus("正在生成汇总 Excel，请稍候…");
+  try {
+    const d = data(); const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet("人员汇总（含照片）", { views: [{ state: "frozen", ySplit: 1 }] });
+    const headers = ["姓名", "学号", "声部", "入团时间", "是否零基础", "老师", "电话", "家乡", "QQ", "微信", "人物照片"];
+    sheet.addRow(headers);
+    sheet.addRow([d.name, d.studentId, d.part, d.joinDate, d.foundation, d.teacher, d.phone, d.hometown, d.qq, d.wechat, ""]);
+    sheet.columns = [12, 18, 12, 16, 15, 14, 18, 22, 16, 22, 15].map((width) => ({ width }));
+    sheet.getRow(1).height = 24; sheet.getRow(2).height = 96;
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { name: "宋体", bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2F6B4F" } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = { top: { style: "thin", color: { argb: "FFB7C9BD" } }, left: { style: "thin", color: { argb: "FFB7C9BD" } }, bottom: { style: "thin", color: { argb: "FFB7C9BD" } }, right: { style: "thin", color: { argb: "FFB7C9BD" } } };
+    });
+    sheet.getRow(2).eachCell((cell) => {
+      cell.font = { name: "宋体", size: 11 }; cell.alignment = { vertical: "top", wrapText: true };
+      cell.border = { top: { style: "thin", color: { argb: "FFD6E0D9" } }, left: { style: "thin", color: { argb: "FFD6E0D9" } }, bottom: { style: "thin", color: { argb: "FFD6E0D9" } }, right: { style: "thin", color: { argb: "FFD6E0D9" } } };
+    });
+    if (photoDataUrl) {
+      const imageId = book.addImage({ base64: photoDataUrl, extension: imageExtension(photoDataUrl) });
+      sheet.addImage(imageId, { tl: { col: 10.12, row: 1.07 }, ext: { width: 76, height: 92 } });
+    } else {
+      const photoCell = sheet.getCell("K2"); photoCell.value = "照片粘贴处"; photoCell.alignment = { vertical: "middle", horizontal: "center" };
+    }
+    const buffer = await book.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "xlsx"); link.click(); URL.revokeObjectURL(link.href);
+    setStatus("人员汇总 Excel 已开始下载，可直接复制该行到汇总表末尾。");
+  } catch (error) { console.error(error); setStatus("Excel 生成失败，请刷新页面后重试。", true); }
+  finally { button.disabled = false; }
 });
 
 function fit(text, font, size, width) {
@@ -181,14 +153,11 @@ document.querySelector("#download-pdf").addEventListener("click", async () => {
     const pdf = await PDFDocument.load(template); pdf.registerFontkit(fontkit);
     const font = await pdf.embedFont(fontBytes, { subset: true }); const page = pdf.getPage(0);
     draw(page, font, d.number, 474, 704, 62, 9);
-    [[d.name, 140, 686, 68], [d.studentId, 320, 686, 60], [d.part, 140, 664, 68], [d.joinDate, 320, 664, 60], [d.foundation, 140, 642, 68], [d.teacher, 320, 642, 60], [d.phone, 140, 620, 68], [d.hometown, 320, 620, 60], [d.qq, 140, 598, 68], [d.wechat, 320, 598, 60]].forEach(([value, x, y, width]) => draw(page, font, value, x, y, width));
+    [[d.name, 140, 676, 68], [d.studentId, 320, 676, 60], [d.part, 140, 654, 68], [d.joinDate, 320, 654, 60], [d.foundation, 140, 632, 68], [d.teacher, 320, 632, 60], [d.phone, 140, 610, 68], [d.hometown, 320, 610, 60], [d.qq, 140, 588, 68], [d.wechat, 320, 588, 60]].forEach(([value, x, y, width]) => draw(page, font, value, x, y, width));
     if (photoDataUrl) {
       const bytes = await imageBytes(photoDataUrl); const photo = photoDataUrl.startsWith("data:image/png") ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-      page.drawImage(photo, { x: 386, y: 610, width: 66, height: 89 });
+      page.drawImage(photo, { x: 386, y: 598, width: 66, height: 89 });
     }
-    d.awards.slice(0, 6).forEach(([date, name], i) => { const y = 569 - i * 18; draw(page, font, i + 1, 87, y, 18); draw(page, font, date, 121, y, 47); draw(page, font, name, 300, y, 148); });
-    d.attendance.slice(0, 6).forEach(([term, mark, signer], i) => { const y = 447 - i * 18; draw(page, font, term, 92, y, 67); draw(page, font, mark, 215, y, 151); draw(page, font, signer, 397, y, 44); });
-    d.performances.slice(0, 9).forEach(([date, place, theme, song], i) => { const y = 310 - i * 18; draw(page, font, date, 88, y, 55); draw(page, font, place, 152, y, 60); draw(page, font, theme, 226, y, 102); draw(page, font, song, 338, y, 108); });
     const blob = new Blob([await pdf.save()], { type: "application/pdf" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "pdf"); link.click(); URL.revokeObjectURL(link.href);
     setStatus("PDF 已开始下载。");
