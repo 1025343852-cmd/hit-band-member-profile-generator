@@ -38,6 +38,8 @@ document.querySelector("#app").innerHTML = `
           ${field("hometown", "家乡", "text", true)}
           ${field("qq", "QQ", "text", true)}
           ${field("wechat", "微信", "text", true)}
+          ${field("birthday", "生日", "date", true)}
+          ${field("college", "所在学院（部）", "text", true)}
           <label class="field photo-field"><span>证件照</span><input id="photo" type="file" accept="image/png,image/jpeg" required /><small>支持 PNG、JPG，导出时自动适配照片粘贴处。</small></label>
         </div>
         <div class="photo-preview" id="photo-preview" hidden><img alt="证件照预览" /><button type="button" id="remove-photo">移除照片</button></div>
@@ -77,7 +79,8 @@ function data() {
   return {
     name: getValue("name"), studentId: getValue("studentId"), part: getValue("part"),
     joinDate: dateText(getValue("joinDate")), foundation: getValue("foundation"), teacher: getValue("teacher"),
-    phone: getValue("phone"), hometown: getValue("hometown"), qq: getValue("qq"), wechat: getValue("wechat")
+    phone: getValue("phone"), hometown: getValue("hometown"), qq: getValue("qq"), wechat: getValue("wechat"),
+    birthday: dateText(getValue("birthday")), college: getValue("college")
   };
 }
 function valid() {
@@ -98,10 +101,10 @@ document.querySelector("#download-xlsx").addEventListener("click", async () => {
   try {
     const d = data(); const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet("人员汇总（含照片）", { views: [{ state: "frozen", ySplit: 1 }] });
-    const headers = ["姓名", "学号", "声部", "入团时间", "是否零基础", "老师", "电话", "家乡", "QQ", "微信", "人物照片"];
+    const headers = ["姓名", "学号", "声部", "入团时间", "是否零基础", "老师", "电话", "家乡", "QQ", "微信", "生日", "所在学院（部）", "人物照片"];
     sheet.addRow(headers);
-    sheet.addRow([d.name, d.studentId, d.part, d.joinDate, d.foundation, d.teacher, d.phone, d.hometown, d.qq, d.wechat, ""]);
-    sheet.columns = [12, 18, 12, 16, 15, 14, 18, 22, 16, 22, 15].map((width) => ({ width }));
+    sheet.addRow([d.name, d.studentId, d.part, d.joinDate, d.foundation, d.teacher, d.phone, d.hometown, d.qq, d.wechat, d.birthday, d.college, ""]);
+    sheet.columns = [12, 18, 12, 16, 15, 14, 18, 22, 16, 22, 16, 22, 15].map((width) => ({ width }));
     sheet.getRow(1).height = 24; sheet.getRow(2).height = 96;
     sheet.getRow(1).eachCell((cell) => {
       cell.font = { name: "宋体", bold: true, size: 11, color: { argb: "FFFFFFFF" } };
@@ -115,9 +118,9 @@ document.querySelector("#download-xlsx").addEventListener("click", async () => {
     });
     if (photoDataUrl) {
       const imageId = book.addImage({ base64: photoDataUrl, extension: imageExtension(photoDataUrl) });
-      sheet.addImage(imageId, { tl: { col: 10.12, row: 1.07 }, ext: { width: 76, height: 92 } });
+      sheet.addImage(imageId, { tl: { col: 12.12, row: 1.07 }, ext: { width: 76, height: 92 } });
     } else {
-      const photoCell = sheet.getCell("K2"); photoCell.value = "照片粘贴处"; photoCell.alignment = { vertical: "middle", horizontal: "center" };
+      const photoCell = sheet.getCell("M2"); photoCell.value = "照片粘贴处"; photoCell.alignment = { vertical: "middle", horizontal: "center" };
     }
     const buffer = await book.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
