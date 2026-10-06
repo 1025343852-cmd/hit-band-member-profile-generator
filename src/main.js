@@ -9,7 +9,7 @@ const field = (id, label, type = "text", required = false, options = []) => {
   const control = options.length
     ? `<select id="${id}" ${required ? "required" : ""}><option value="">请选择</option>${options.map((item) => `<option>${item}</option>`).join("")}</select>`
     : `<input id="${id}" type="${type}" ${required ? "required" : ""} />`;
-  return `<label class="field"><span>${label}${required ? '<b aria-label="必填">*</b>' : ""}</span>${control}</label>`;
+  return `<label class="field"><span>${label}</span>${control}</label>`;
 };
 
 document.querySelector("#app").innerHTML = `
@@ -26,20 +26,19 @@ document.querySelector("#app").innerHTML = `
 
     <form id="profile-form">
       <section class="card">
-        <div class="section-title"><span>01</span><div><h2>基本档案</h2><p>带 * 的项目会出现在档案表中。</p></div></div>
+        <div class="section-title"><span>01</span><div><h2>基本档案</h2><p>除老师外，其余项目均为必填。</p></div></div>
         <div class="form-grid">
-          ${field("number", "编号")}
           ${field("name", "姓名", "text", true)}
           ${field("studentId", "学号", "text", true)}
           ${field("part", "声部", "text", true)}
-          ${field("joinDate", "入团时间", "date")}
-          ${field("foundation", "是否零基础", "text", false, ["是", "否"])}
+          ${field("joinDate", "入团时间", "date", true)}
+          ${field("foundation", "是否零基础", "text", true, ["是", "否"])}
           ${field("teacher", "老师")}
-          ${field("phone", "电话", "tel")}
-          ${field("hometown", "家乡")}
-          ${field("qq", "QQ")}
-          ${field("wechat", "微信")}
-          <label class="field photo-field"><span>证件照</span><input id="photo" type="file" accept="image/png,image/jpeg" /><small>支持 PNG、JPG，导出时自动适配照片粘贴处。</small></label>
+          ${field("phone", "电话", "tel", true)}
+          ${field("hometown", "家乡", "text", true)}
+          ${field("qq", "QQ", "text", true)}
+          ${field("wechat", "微信", "text", true)}
+          <label class="field photo-field"><span>证件照</span><input id="photo" type="file" accept="image/png,image/jpeg" required /><small>支持 PNG、JPG，导出时自动适配照片粘贴处。</small></label>
         </div>
         <div class="photo-preview" id="photo-preview" hidden><img alt="证件照预览" /><button type="button" id="remove-photo">移除照片</button></div>
       </section>
@@ -76,14 +75,14 @@ function getValue(id) { return document.querySelector(`#${id}`).value.trim(); }
 function dateText(value) { return value ? value.replaceAll("-", ".") : ""; }
 function data() {
   return {
-    number: getValue("number"), name: getValue("name"), studentId: getValue("studentId"), part: getValue("part"),
+    name: getValue("name"), studentId: getValue("studentId"), part: getValue("part"),
     joinDate: dateText(getValue("joinDate")), foundation: getValue("foundation"), teacher: getValue("teacher"),
     phone: getValue("phone"), hometown: getValue("hometown"), qq: getValue("qq"), wechat: getValue("wechat")
   };
 }
 function valid() {
   const form = document.querySelector("#profile-form");
-  if (!form.reportValidity()) { setStatus("请先填写姓名、学号和声部。", true); return false; }
+  if (!form.reportValidity()) { setStatus("请完整填写除老师外的所有项目，并上传证件照。", true); return false; }
   return true;
 }
 function setStatus(message, error = false) {
