@@ -1,6 +1,5 @@
-import { PDFDocument, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import "./style.css";
 
 const asset = (name) => `${import.meta.env.BASE_URL}assets/${name}`;
@@ -18,7 +17,7 @@ document.querySelector("#app").innerHTML = `
     <header class="hero">
       <p class="eyebrow">哈尔滨工业大学军乐团</p>
       <h1>团员档案生成器</h1>
-      <p>填写一次，即可在本机下载标准 PDF 档案表和 Excel 台账。</p>
+      <p>填写一次，即可在本机下载标准 Word 档案表和 Excel 台账。</p>
     </header>
 
     <section class="privacy" aria-label="隐私说明">
@@ -46,8 +45,8 @@ document.querySelector("#app").innerHTML = `
       </section>
 
       <section class="actions">
-        <div><h2>导出档案</h2><p>确认信息后分别下载 PDF 或 Excel。</p></div>
-        <div class="buttons"><button type="button" class="secondary" id="download-xlsx">下载 Excel</button><button type="button" class="primary" id="download-pdf">下载 PDF</button></div>
+        <div><h2>导出档案</h2><p>下载 Word 后，可用 Word 或 WPS 的“另存为 PDF”获得对齐的标准表格。</p></div>
+        <div class="buttons"><button type="button" class="secondary" id="download-xlsx">下载 Excel</button><button type="button" class="primary" id="download-docx">下载 Word</button></div>
       </section>
     </form>
     <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -129,38 +128,43 @@ document.querySelector("#download-xlsx").addEventListener("click", async () => {
   finally { button.disabled = false; }
 });
 
-function fit(text, font, size, width) {
-  let value = String(text || "");
-  while (value && font.widthOfTextAtSize(value, size) > width) value = `${value.slice(0, -2)}…`;
-  return value;
+function xmlEscape(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
-function draw(page, font, value, x, y, width, size = 8.4) {
-  const text = fit(value, font, size, width);
-  page.drawText(text, { x, y, size, font, color: rgb(0.12, 0.12, 0.12) });
+async function photoAsPngBlob(dataUrl) {
+  const image = await new Promise((resolve, reject) => {
+    const source = new Image(); source.onload = () => resolve(source); source.onerror = reject; source.src = dataUrl;
+  });
+  const width = 240; const height = 320; const targetRatio = width / height; const sourceRatio = image.width / image.height;
+  let sx = 0; let sy = 0; let sw = image.width; let sh = image.height;
+  if (sourceRatio > targetRatio) { sw = image.height * targetRatio; sx = (image.width - sw) / 2; }
+  else { sh = image.width / targetRatio; sy = (image.height - sh) / 2; }
+  const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+  canvas.getContext("2d").drawImage(image, sx, sy, sw, sh, 0, 0, width, height);
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("无法转换照片")), "image/png"));
 }
-async function imageBytes(dataUrl) { return Uint8Array.from(atob(dataUrl.split(",")[1]), (c) => c.charCodeAt(0)); }
 
-document.querySelector("#download-pdf").addEventListener("click", async () => {
+document.querySelector("#download-docx").addEventListener("click", async () => {
   if (!valid()) return;
-  const button = document.querySelector("#download-pdf");
-  button.disabled = true; setStatus("正在生成 PDF，请稍候…");
+  const button = document.querySelector("#download-docx");
+  button.disabled = true; setStatus("正在生成 Word 档案表，请稍候…");
   try {
     const d = data();
-    const [template, fontBytes] = await Promise.all([
-      fetch(asset("member-profile-template.pdf")).then((r) => r.arrayBuffer()),
-      fetch(asset("NotoSansCJKsc-Regular.otf")).then((r) => r.arrayBuffer())
+    const [template, config] = await Promise.all([
+      fetch(asset("member-profile-word-template.docx")).then((r) => r.arrayBuffer()),
+      fetch(asset("member-profile-word-template.json")).then((r) => r.json())
     ]);
-    const pdf = await PDFDocument.load(template); pdf.registerFontkit(fontkit);
-    const font = await pdf.embedFont(fontBytes, { subset: true }); const page = pdf.getPage(0);
-    draw(page, font, d.number, 474, 704, 62, 9);
-    [[d.name, 140, 676, 68], [d.studentId, 320, 676, 60], [d.part, 140, 654, 68], [d.joinDate, 320, 654, 60], [d.foundation, 140, 632, 68], [d.teacher, 320, 632, 60], [d.phone, 140, 610, 68], [d.hometown, 320, 610, 60], [d.qq, 140, 588, 68], [d.wechat, 320, 588, 60]].forEach(([value, x, y, width]) => draw(page, font, value, x, y, width));
-    if (photoDataUrl) {
-      const bytes = await imageBytes(photoDataUrl); const photo = photoDataUrl.startsWith("data:image/png") ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-      page.drawImage(photo, { x: 386, y: 598, width: 66, height: 89 });
-    }
-    const blob = new Blob([await pdf.save()], { type: "application/pdf" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "pdf"); link.click(); URL.revokeObjectURL(link.href);
-    setStatus("PDF 已开始下载。");
-  } catch (error) { console.error(error); setStatus("PDF 生成失败，请刷新页面后重试。", true); }
+    const zip = await JSZip.loadAsync(template);
+    const documentXml = zip.file("word/document.xml");
+    if (!documentXml) throw new Error("找不到 Word 模板正文。");
+    let xml = await documentXml.async("string");
+    Object.entries(d).forEach(([key, value]) => { xml = xml.replaceAll(`{{${key}}}`, xmlEscape(value)); });
+    zip.file("word/document.xml", xml);
+    if (photoDataUrl) zip.file(config.photoMediaPath, await photoAsPngBlob(photoDataUrl));
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "docx"); link.click(); URL.revokeObjectURL(link.href);
+    setStatus("Word 档案表已开始下载。请用 Word 或 WPS 选择“另存为 PDF”。");
+  } catch (error) { console.error(error); setStatus("Word 生成失败，请刷新页面后重试。", true); }
   finally { button.disabled = false; }
 });
