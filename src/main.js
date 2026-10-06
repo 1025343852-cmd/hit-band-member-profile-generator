@@ -151,13 +151,14 @@ document.querySelector("#download-docx").addEventListener("click", async () => {
   try {
     const d = data();
     const [template, config] = await Promise.all([
-      fetch(asset("member-profile-word-template.docx")).then((r) => r.arrayBuffer()),
-      fetch(asset("member-profile-word-template.json")).then((r) => r.json())
+      fetch(asset("member-profile-word-template-v2.docx"), { cache: "no-store" }).then((r) => r.arrayBuffer()),
+      fetch(asset("member-profile-word-template-v2.json"), { cache: "no-store" }).then((r) => r.json())
     ]);
     const zip = await JSZip.loadAsync(template);
     const documentXml = zip.file("word/document.xml");
     if (!documentXml) throw new Error("找不到 Word 模板正文。");
     let xml = await documentXml.async("string");
+    xml = xml.replaceAll("{{number}}", "");
     Object.entries(d).forEach(([key, value]) => { xml = xml.replaceAll(`{{${key}}}`, xmlEscape(value)); });
     zip.file("word/document.xml", xml);
     if (photoDataUrl) zip.file(config.photoMediaPath, await photoAsPngBlob(photoDataUrl));
