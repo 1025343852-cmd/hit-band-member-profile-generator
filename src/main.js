@@ -46,7 +46,7 @@ document.querySelector("#app").innerHTML = `
       </section>
 
       <section class="actions">
-        <div><h2>导出档案包</h2><p>下载一个 ZIP，解压到 Obsidian 库根目录即可获得 Word、Excel、照片和可双链的 Markdown 档案。</p></div>
+        <div><h2>导出档案包</h2><p>下载一个 ZIP，内含 Markdown 档案、Word 档案表和 Excel 台账。</p></div>
         <div class="buttons"><button type="button" class="primary" id="download-package">下载 Obsidian 档案包</button></div>
       </section>
     </form>
@@ -97,6 +97,10 @@ function safePathSegment(value, fallback) {
 }
 function markdownText(value) {
   return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
+}
+function birthdayTags(value) {
+  const match = String(value).match(/^\d{4}\.(\d{2})\.(\d{2})$/);
+  return match ? `#${Number(match[1])}月 #${Number(match[2])}日` : "";
 }
 
 function imageExtension(dataUrl) { return dataUrl.startsWith("data:image/png") ? "png" : "jpeg"; }
@@ -160,8 +164,8 @@ async function createWord(d) {
     return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }
 
-function createObsidianNote(d, paths) {
-  return `# ${markdownText(d.name)}\n\n## 一、基本信息\n\n| 项目 | 内容 |\n| --- | --- |\n| 学号 | ${markdownText(d.studentId)} |\n| 声部 | #${markdownText(d.part)} |\n| 出生日期 | ${markdownText(d.birthday)} |\n| 入团时间 | ${markdownText(d.joinDate)} |\n| 是否零基础 | ${markdownText(d.foundation)} |\n| 老师 | ${markdownText(d.teacher)} |\n| 电话 | ${markdownText(d.phone)} |\n| 家乡 | ${markdownText(d.hometown)} |\n| QQ | ${markdownText(d.qq)} |\n| 微信 | ${markdownText(d.wechat)} |\n| 所在学院（部） | ${markdownText(d.college)} |\n\n## 二、档案附件\n\n- ![[${paths.photo}]]\n- [[${paths.word}|Word 档案表]]\n- [[${paths.excel}|Excel 台账]]\n\n## 三、在乐团何时何地受到何种奖励\n\n| 序号 | 时间 | 奖励名称 |\n| --- | --- | --- |\n\n## 四、团员排练考勤\n\n> [!NOTE] 考核标准\n> 出勤率60%及以上为及格、出勤率80%及以上为良好、出勤率90%及以上为优秀\n\n| 学期 | 出勤率 | 评级 |\n| --- | --- | --- |\n\n## 五、演出登记\n\n| 序号 | 演出主题 | 曲目名称（专场无需填写） |\n| --- | --- | --- |\n\n## 六、何时担任何种职务\n\n| 序号 | 任期 | 职务 |\n| --- | --- | --- |\n`;
+function createObsidianNote(d) {
+  return `# ${markdownText(d.name)}\n\n## 一、基本信息\n\n| 项目 | 内容 |\n| --- | --- |\n| 学号 | ${markdownText(d.studentId)} |\n| 声部 | #${markdownText(d.part)} |\n| 出生月份 | ${birthdayTags(d.birthday)} |\n| 入团时间 | ${markdownText(d.joinDate)} |\n| 是否零基础 | #${markdownText(d.foundation)} |\n| 老师 | ${markdownText(d.teacher)} |\n| 电话 | ${markdownText(d.phone)} |\n| 家乡 | #${markdownText(d.hometown)} |\n| QQ | ${markdownText(d.qq)} |\n| 微信 | ${markdownText(d.wechat)} |\n| 所在学院（部） | ${markdownText(d.college)} |\n\n## 二、在乐团何时何地受到何种奖励\n\n| 序号 | 时间 | 奖励名称 |\n| --- | --- | --- |\n\n## 三、团员排练考勤\n\n> [!NOTE] 考核标准\n> 出勤率60%及以上为及格、出勤率80%及以上为良好、出勤率90%及以上为优秀\n\n| 学期 | 出勤率 | 评级 |\n| --- | --- | --- |\n\n## 四、演出登记\n\n| 序号 | 演出主题 | 曲目名称（专场无需填写） |\n| --- | --- | --- |\n\n## 五、何时担任何种职务\n\n| 序号 | 任期 | 职务 |\n| --- | --- | --- |\n`;
 }
 
 document.querySelector("#download-package").addEventListener("click", async () => {
@@ -172,22 +176,15 @@ document.querySelector("#download-package").addEventListener("click", async () =
     const d = data();
     const memberName = safePathSegment(d.name, "未命名");
     const part = safePathSegment(d.part, "未分类声部");
-    const identity = `${memberName}_${safePathSegment(d.studentId, "档案")}`;
-    const paths = {
-      word: `附件/团员档案/${identity}.docx`,
-      excel: `附件/团员档案/${identity}.xlsx`,
-      photo: `附件/团员照片/${identity}.png`
-    };
-    const [word, excel, photo] = await Promise.all([createWord(d), createExcel(d), photoAsPngBlob(photoDataUrl)]);
+    const markdownFilename = `${memberName}${part}.md`;
+    const [word, excel] = await Promise.all([createWord(d), createExcel(d)]);
     const archive = new JSZip();
-    archive.file(`团员档案/${part}/${memberName}.md`, createObsidianNote(d, paths));
-    archive.file(paths.word, word);
-    archive.file(paths.excel, excel);
-    archive.file(paths.photo, photo);
-    archive.file("导入说明.txt", "请将本 ZIP 的全部内容解压到 Obsidian 库根目录。\r\n不要直接在压缩包内打开文件；解压后，在 Obsidian 中打开 团员档案/ 对应声部/成员姓名.md。\r\n");
+    archive.file(markdownFilename, createObsidianNote(d));
+    archive.file(filename(d, "docx"), word);
+    archive.file(filename(d, "xlsx"), excel);
     const blob = await archive.generateAsync({ type: "blob", compression: "DEFLATE" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "zip"); link.click(); URL.revokeObjectURL(link.href);
-    setStatus("Obsidian 档案包已开始下载。请转交管理员，并由管理员解压到档案库根目录。");
+    setStatus("Obsidian 档案包已开始下载。请转交管理员，再将 Markdown 文件放入对应声部文件夹。");
   } catch (error) { console.error(error); setStatus("档案包生成失败，请刷新页面后重试。", true); }
   finally { button.disabled = false; }
 });

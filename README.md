@@ -2,14 +2,13 @@
 
 静态 GitHub Pages 网站。填写资料后，浏览器会在本地生成一个 Obsidian 档案 ZIP 包；资料与照片不会上传到服务器或保存到浏览器存储。
 
-ZIP 内含：
+ZIP 根目录内含：
 
-- 可直接放入 `团员档案/<声部>/` 的 Markdown 档案；
-- `附件/团员档案/` 中的 Word 档案表和 Excel 台账；
-- `附件/团员照片/` 中的证件照；
-- 导入说明。
+- 以“姓名+声部”命名的 Markdown 档案；
+- Word 档案表；
+- Excel 台账。
 
-接收者应将 ZIP 的全部内容解压到 Obsidian 库根目录，再打开成员 Markdown 档案。
+接收者将 ZIP 解压后，管理员把 Markdown 文件移至 Obsidian 库对应的声部文件夹即可。
 
 ## 本地运行
 
