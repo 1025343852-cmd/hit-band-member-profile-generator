@@ -17,11 +17,11 @@ document.querySelector("#app").innerHTML = `
     <header class="hero">
       <p class="eyebrow">哈尔滨工业大学军乐团</p>
       <h1>团员档案生成器</h1>
-      <p>填写一次，即可在本机下载标准 Word 档案表和 Excel 台账。</p>
+      <p>填写一次，下载可直接导入 Obsidian 档案库的完整 ZIP 包。</p>
     </header>
 
     <section class="privacy" aria-label="隐私说明">
-      <strong>本地处理</strong><span>填写内容与照片只在当前浏览器中使用，不会上传或保存到服务器。</span>
+      <strong>本地处理</strong><span>填写内容与照片只在当前浏览器中使用，不会上传、保存到服务器或写入浏览器存储。关闭或刷新页面后即清空。</span>
     </section>
 
     <form id="profile-form">
@@ -46,8 +46,8 @@ document.querySelector("#app").innerHTML = `
       </section>
 
       <section class="actions">
-        <div><h2>导出档案</h2><p>下载 Word 后，可用 Word 或 WPS 的“另存为 PDF”获得对齐的标准表格。</p></div>
-        <div class="buttons"><button type="button" class="secondary" id="download-xlsx">下载 Excel</button><button type="button" class="primary" id="download-docx">下载 Word</button></div>
+        <div><h2>导出档案包</h2><p>下载一个 ZIP，解压到 Obsidian 库根目录即可获得 Word、Excel、照片和可双链的 Markdown 档案。</p></div>
+        <div class="buttons"><button type="button" class="primary" id="download-package">下载 Obsidian 档案包</button></div>
       </section>
     </form>
     <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -92,14 +92,16 @@ function setStatus(message, error = false) {
   const target = document.querySelector("#status"); target.textContent = message; target.classList.toggle("error", error);
 }
 function filename(d, extension) { return `军乐团团员档案_${d.name || "未命名"}_${d.studentId || "档案"}.${extension}`; }
+function safePathSegment(value, fallback) {
+  return String(value || fallback).replace(/[\\/:*?"<>|]/g, "_").trim() || fallback;
+}
+function markdownText(value) {
+  return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
+}
 
 function imageExtension(dataUrl) { return dataUrl.startsWith("data:image/png") ? "png" : "jpeg"; }
-document.querySelector("#download-xlsx").addEventListener("click", async () => {
-  if (!valid()) return;
-  const button = document.querySelector("#download-xlsx");
-  button.disabled = true; setStatus("正在生成汇总 Excel，请稍候…");
-  try {
-    const d = data(); const book = new ExcelJS.Workbook();
+async function createExcel(d) {
+    const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet("人员汇总（含照片）", { views: [{ state: "frozen", ySplit: 1 }] });
     const headers = ["姓名", "学号", "声部", "入团时间", "是否零基础", "老师", "电话", "家乡", "QQ", "微信", "生日", "所在学院（部）", "人物照片"];
     sheet.addRow(headers);
@@ -122,13 +124,8 @@ document.querySelector("#download-xlsx").addEventListener("click", async () => {
     } else {
       const photoCell = sheet.getCell("M2"); photoCell.value = "照片粘贴处"; photoCell.alignment = { vertical: "middle", horizontal: "center" };
     }
-    const buffer = await book.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "xlsx"); link.click(); URL.revokeObjectURL(link.href);
-    setStatus("人员汇总 Excel 已开始下载，可直接复制该行到汇总表末尾。");
-  } catch (error) { console.error(error); setStatus("Excel 生成失败，请刷新页面后重试。", true); }
-  finally { button.disabled = false; }
-});
+    return book.xlsx.writeBuffer();
+}
 
 function xmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -147,12 +144,7 @@ async function photoAsPngBlob(dataUrl) {
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("无法转换照片")), "image/png"));
 }
 
-document.querySelector("#download-docx").addEventListener("click", async () => {
-  if (!valid()) return;
-  const button = document.querySelector("#download-docx");
-  button.disabled = true; setStatus("正在生成 Word 档案表，请稍候…");
-  try {
-    const d = data();
+async function createWord(d) {
     const [template, config] = await Promise.all([
       fetch(asset("member-profile-word-template-v2.docx"), { cache: "no-store" }).then((r) => r.arrayBuffer()),
       fetch(asset("member-profile-word-template-v2.json"), { cache: "no-store" }).then((r) => r.json())
@@ -165,9 +157,37 @@ document.querySelector("#download-docx").addEventListener("click", async () => {
     Object.entries(d).forEach(([key, value]) => { xml = xml.replaceAll(`{{${key}}}`, xmlEscape(value)); });
     zip.file("word/document.xml", xml);
     if (photoDataUrl) zip.file(config.photoMediaPath, await photoAsPngBlob(photoDataUrl));
-    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "docx"); link.click(); URL.revokeObjectURL(link.href);
-    setStatus("Word 档案表已开始下载。请用 Word 或 WPS 选择“另存为 PDF”。");
-  } catch (error) { console.error(error); setStatus("Word 生成失败，请刷新页面后重试。", true); }
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+}
+
+function createObsidianNote(d, paths) {
+  return `# ${markdownText(d.name)}\n\n## 一、基本信息\n\n| 项目 | 内容 |\n| --- | --- |\n| 学号 | ${markdownText(d.studentId)} |\n| 声部 | #${markdownText(d.part)} |\n| 出生日期 | ${markdownText(d.birthday)} |\n| 入团时间 | ${markdownText(d.joinDate)} |\n| 是否零基础 | ${markdownText(d.foundation)} |\n| 老师 | ${markdownText(d.teacher)} |\n| 电话 | ${markdownText(d.phone)} |\n| 家乡 | ${markdownText(d.hometown)} |\n| QQ | ${markdownText(d.qq)} |\n| 微信 | ${markdownText(d.wechat)} |\n| 所在学院（部） | ${markdownText(d.college)} |\n\n## 二、档案附件\n\n- ![[${paths.photo}]]\n- [[${paths.word}|Word 档案表]]\n- [[${paths.excel}|Excel 台账]]\n\n## 三、在乐团何时何地受到何种奖励\n\n| 序号 | 时间 | 奖励名称 |\n| --- | --- | --- |\n\n## 四、团员排练考勤\n\n> [!NOTE] 考核标准\n> 出勤率60%及以上为及格、出勤率80%及以上为良好、出勤率90%及以上为优秀\n\n| 学期 | 出勤率 | 评级 |\n| --- | --- | --- |\n\n## 五、演出登记\n\n| 序号 | 演出主题 | 曲目名称（专场无需填写） |\n| --- | --- | --- |\n\n## 六、何时担任何种职务\n\n| 序号 | 任期 | 职务 |\n| --- | --- | --- |\n`;
+}
+
+document.querySelector("#download-package").addEventListener("click", async () => {
+  if (!valid()) return;
+  const button = document.querySelector("#download-package");
+  button.disabled = true; setStatus("正在生成 Obsidian 档案包，请稍候…");
+  try {
+    const d = data();
+    const memberName = safePathSegment(d.name, "未命名");
+    const part = safePathSegment(d.part, "未分类声部");
+    const identity = `${memberName}_${safePathSegment(d.studentId, "档案")}`;
+    const paths = {
+      word: `附件/团员档案/${identity}.docx`,
+      excel: `附件/团员档案/${identity}.xlsx`,
+      photo: `附件/团员照片/${identity}.png`
+    };
+    const [word, excel, photo] = await Promise.all([createWord(d), createExcel(d), photoAsPngBlob(photoDataUrl)]);
+    const archive = new JSZip();
+    archive.file(`团员档案/${part}/${memberName}.md`, createObsidianNote(d, paths));
+    archive.file(paths.word, word);
+    archive.file(paths.excel, excel);
+    archive.file(paths.photo, photo);
+    archive.file("导入说明.txt", "请将本 ZIP 的全部内容解压到 Obsidian 库根目录。\r\n不要直接在压缩包内打开文件；解压后，在 Obsidian 中打开 团员档案/ 对应声部/成员姓名.md。\r\n");
+    const blob = await archive.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "zip"); link.click(); URL.revokeObjectURL(link.href);
+    setStatus("Obsidian 档案包已开始下载。请转交管理员，并由管理员解压到档案库根目录。");
+  } catch (error) { console.error(error); setStatus("档案包生成失败，请刷新页面后重试。", true); }
   finally { button.disabled = false; }
 });
