@@ -46,7 +46,7 @@ document.querySelector("#app").innerHTML = `
       </section>
 
       <section class="actions">
-        <div><h2>导出档案包</h2><p>下载一个 ZIP，内含 Markdown 档案、Word 档案表和 Excel 台账。</p></div>
+        <div><h2>导出档案包</h2><p>下载一个 ZIP，内含 Markdown 档案、Word 档案表、Excel 台账和声部文本文件。</p></div>
         <div class="buttons"><button type="button" class="primary" id="download-package">下载 Obsidian 档案包</button></div>
       </section>
     </form>
@@ -176,12 +176,14 @@ document.querySelector("#download-package").addEventListener("click", async () =
     const d = data();
     const memberName = safePathSegment(d.name, "未命名");
     const part = safePathSegment(d.part, "未分类声部");
-    const markdownFilename = `${memberName}${part}.md`;
+    const markdownFilename = `${memberName}.md`;
+    const partFilename = `${part}.txt`;
     const [word, excel] = await Promise.all([createWord(d), createExcel(d)]);
     const archive = new JSZip();
     archive.file(markdownFilename, createObsidianNote(d));
     archive.file(filename(d, "docx"), word);
     archive.file(filename(d, "xlsx"), excel);
+    archive.file(partFilename, `声部：${d.part}\r\n`);
     const blob = await archive.generateAsync({ type: "blob", compression: "DEFLATE" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename(d, "zip"); link.click(); URL.revokeObjectURL(link.href);
     setStatus("Obsidian 档案包已开始下载。请转交管理员，再将 Markdown 文件放入对应声部文件夹。");

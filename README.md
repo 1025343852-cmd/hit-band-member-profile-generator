@@ -4,9 +4,10 @@
 
 ZIP 根目录内含：
 
-- 以“姓名+声部”命名的 Markdown 档案；
+- 以“姓名”命名的 Markdown 档案；
 - Word 档案表；
 - Excel 台账。
+- 以“所在声部”命名、内容为该声部名称的 TXT 文件。
 
 接收者将 ZIP 解压后，管理员把 Markdown 文件移至 Obsidian 库对应的声部文件夹即可。
 
